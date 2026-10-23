@@ -17,6 +17,7 @@ import '../../widgets/app_notification.dart';
 import '../../widgets/component_kit.dart';
 import 'models/import_draft.dart';
 import 'services/schedule_ocr_service.dart';
+import 'utils/timetable_format.dart';
 import 'utils/timetable_parser.dart';
 import 'widgets/import_review_widgets.dart';
 import 'widgets/import_source_preview_screen.dart';
@@ -390,11 +391,21 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
         end: row.endMinutes,
         ocrConfidence: row.ocrConfidence,
       );
-      final parsed = ext == '.pdf' || gridRows.isNotEmpty
-          ? gridRows.map(toDraft).toList()
-          : (hasWeekdayHeaders
-                ? <ImportDraft>[]
-                : TimetableParser.parse(text).map(toDraft).toList());
+      List<ImportDraft> parsed;
+      if (ext == '.pdf' || gridRows.isNotEmpty) {
+        parsed = gridRows.map(toDraft).toList();
+      } else if (hasWeekdayHeaders) {
+        // The text looks like a flattened weekly grid. Try the line-oriented
+        // list parser first (one class per line); only when it finds nothing
+        // fall back to the strict no-guess path so free-text lists are never
+        // wrongly rejected as grids.
+        final listRows = TimetableListParser.parse(text);
+        parsed = listRows.isNotEmpty
+            ? listRows.map(toDraft).toList()
+            : <ImportDraft>[];
+      } else {
+        parsed = TimetableParser.parse(text).map(toDraft).toList();
+      }
       final scanWarnings = <String>[
         if (pdfScan != null && pdfScan.pagesSkipped > 0)
           'Only the first ${pdfScan.scannedPages} of ${pdfScan.totalPages} PDF pages were scanned. Inspect the remaining pages before importing.',

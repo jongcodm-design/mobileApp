@@ -15,6 +15,7 @@ class _NoPreprocessing extends OcrImagePreprocessor {
     int quarterTurns = 0,
     bool adaptiveThreshold = false,
     bool invertDarkBackground = false,
+    bool deskew = true,
   }) async => null;
 }
 

@@ -369,9 +369,9 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: MediaQuery(
-          data: const MediaQueryData(disableAnimations: true),
-          child: const Scaffold(body: Center(child: LivePulse())),
+        home: const MediaQuery(
+          data: MediaQueryData(disableAnimations: true),
+          child: Scaffold(body: Center(child: LivePulse())),
         ),
       ),
     );

@@ -9,6 +9,7 @@ import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
 import '../utils/adaptive_ocr_threshold.dart';
+import '../utils/skew_correction.dart';
 
 class _OcrPixelTransformRequest {
   const _OcrPixelTransformRequest({
@@ -17,6 +18,7 @@ class _OcrPixelTransformRequest {
     required this.height,
     required this.invertDarkBackground,
     required this.adaptiveThreshold,
+    this.deskew = false,
   });
 
   final TransferableTypedData rgba;
@@ -24,6 +26,7 @@ class _OcrPixelTransformRequest {
   final int height;
   final bool invertDarkBackground;
   final bool adaptiveThreshold;
+  final bool deskew;
 }
 
 class _OcrPixelTransformResult {
@@ -108,7 +111,87 @@ _OcrPixelTransformResult _transformOcrPixels(
   final pixels = request.adaptiveThreshold
       ? adaptiveThresholdRgba(enhancedPixels, request.width, request.height)
       : enhancedPixels;
+
+  if (request.deskew) {
+    final deskewed = _deskewGrayscaleBuffer(pixels, request.width, request.height);
+    if (deskewed != null) {
+      return _OcrPixelTransformResult(
+        TransferableTypedData.fromList([deskewed]),
+      );
+    }
+  }
   return _OcrPixelTransformResult(TransferableTypedData.fromList([pixels]));
+}
+
+/// Estimates the dominant horizontal-rule tilt and rotates the buffer back to
+/// level. Returns null when the page is already straight or too small.
+Uint8List? _deskewGrayscaleBuffer(Uint8List rgba, int width, int height) {
+  // Downsample by 2 for speed: rules stay detectable at half resolution.
+  final step = 2;
+  final sampledWidth = width ~/ step;
+  final sampledHeight = height ~/ step;
+  if (sampledWidth < 32 || sampledHeight < 32) return null;
+  final rowCounts = List<int>.filled(sampledHeight, 0);
+  final rowCenters = List<double>.filled(sampledHeight, 0);
+  for (var sy = 0; sy < sampledHeight; sy++) {
+    var ink = 0;
+    var centerSum = 0.0;
+    for (var sx = 0; sx < sampledWidth; sx++) {
+      final offset = ((sy * step) * width + sx * step) * 4;
+      if (rgba[offset] < 105) {
+        ink++;
+        centerSum += sx;
+      }
+    }
+    rowCounts[sy] = ink;
+    rowCenters[sy] = ink == 0 ? 0 : centerSum / ink;
+  }
+  final estimate = estimateGridSkew(
+    rowDarkCounts: rowCounts,
+    rowDarkCenters: rowCenters,
+    width: sampledWidth,
+    height: sampledHeight,
+  );
+  if (!estimate.shouldCorrect) return null;
+  debugPrint(
+    'Deskewing OCR image by ${estimate.degrees.toStringAsFixed(2)} degrees '
+    '(confidence ${estimate.confidence.toStringAsFixed(2)}).',
+  );
+  final output = Uint8List(rgba.length);
+  // estimate.radians is the page's tilt; rotate by -radians to level rules.
+  final cos = math.cos(-estimate.radians);
+  final sin = math.sin(-estimate.radians);
+  final cx = (width - 1) / 2;
+  final cy = (height - 1) / 2;
+  for (var y = 0; y < height; y++) {
+    final dy = y - cy;
+    for (var x = 0; x < width; x++) {
+      final dx = x - cx;
+      final sx = cos * dx + sin * dy + cx;
+      final sy = -sin * dx + cos * dy + cy;
+      final offset = (y * width + x) * 4;
+      if (sx < 0 || sx >= width - 1 || sy < 0 || sy >= height - 1) {
+        output[offset] = 255;
+        output[offset + 1] = 255;
+        output[offset + 2] = 255;
+        output[offset + 3] = 255;
+        continue;
+      }
+      final x0 = sx.floor(), y0 = sy.floor();
+      final fx = sx - x0, fy = sy - y0;
+      final i00 = (y0 * width + x0) * 4;
+      final i01 = i00 + width * 4;
+      for (var channel = 0; channel < 4; channel++) {
+        final top =
+            rgba[i00 + channel] * (1 - fx) + rgba[i00 + 4 + channel] * fx;
+        final bottom =
+            rgba[i01 + channel] * (1 - fx) + rgba[i01 + 4 + channel] * fx;
+        output[offset + channel] =
+            (top * (1 - fy) + bottom * fy).round().clamp(0, 255);
+      }
+    }
+  }
+  return output;
 }
 
 /// Creates temporary, OCR-friendly variants while preserving image geometry.
@@ -118,6 +201,7 @@ class OcrImagePreprocessor {
     int quarterTurns = 0,
     bool adaptiveThreshold = false,
     bool invertDarkBackground = false,
+    bool deskew = false,
   }) async {
     ui.ImmutableBuffer? buffer;
     ui.ImageDescriptor? descriptor;
@@ -164,6 +248,7 @@ class OcrImagePreprocessor {
           height: source.height,
           invertDarkBackground: invertDarkBackground,
           adaptiveThreshold: adaptiveThreshold,
+          deskew: deskew,
         ),
         debugLabel: 'Prepare OCR pixels',
       );

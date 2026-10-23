@@ -8,9 +8,11 @@ import 'package:path_provider/path_provider.dart';
 import 'package:pdfx/pdfx.dart';
 import 'package:pdfrx/pdfrx.dart' as pdfrx;
 
+import '../utils/domain_rescoring.dart';
 import '../utils/ocr_image_size.dart';
 import '../utils/pdf_timetable_scan_result.dart';
 import '../utils/schedule_text_parser.dart';
+import '../utils/timetable_format.dart';
 import '../utils/timetable_parser.dart';
 import 'ocr_image_preprocessor.dart';
 import 'timetable_grid_scanner.dart';
@@ -194,13 +196,40 @@ class ScheduleOcrService {
         (a, b) => _scoreOcrCandidate(b).compareTo(_scoreOcrCandidate(a)),
       );
       final best = candidates.first;
+
+      // Format routing + domain correction: OCR letter/digit slips inside
+      // times and codes are normalized first, then list-style schedules
+      // ("CS201 Mon 9:30-11:00 Room B12", one per line) are parsed
+      // line-by-line when that yields more valid rows than the merged
+      // free-text path.
+      final normalizedText = normalizeOcrTokens(best.text);
+      final estimate = TimetableFormatClassifier.classify(normalizedText);
+      String selectedText = normalizedText;
+      int selectedRows = TimetableParser.parse(normalizedText).length;
+      if (estimate.format == TimetableFormat.list && estimate.confidence >= .6) {
+        final listRows = TimetableListParser.parse(normalizedText);
+        if (listRows.length > selectedRows) {
+          // Emit only the class lines the list parser understood so the
+          // downstream review screen re-parses exactly these rows.
+          selectedText = listRows
+              .map((row) => row.subject)
+              .join('\n');
+          selectedRows = listRows.length;
+          debugPrint(
+            'Selected ${best.label} OCR candidate with list-format routing: '
+            '$selectedRows parsed rows (${estimate.evidence}).',
+          );
+        }
+      }
+
       debugPrint(
         'Selected ${best.label} OCR candidate: '
-        '${TimetableParser.parse(best.text).length} parsed rows, '
-        'confidence ${best.meanConfidence.toStringAsFixed(3)}.',
+        '$selectedRows parsed rows, '
+        'confidence ${best.meanConfidence.toStringAsFixed(3)}, '
+        'format ${estimate.format.name}.',
       );
       onProgress(.84, 'Text recognition complete');
-      return best.text;
+      return selectedText;
     } finally {
       for (final file in temporaryFiles) {
         try {
