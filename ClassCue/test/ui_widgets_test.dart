@@ -260,7 +260,12 @@ void main() {
       );
 
       final time = tester.widget<Text>(find.text(item.timeRange));
-      expect(time.style?.fontWeight, FontWeight.w700);
+      // The weight lives on the wrapping AnimatedDefaultTextStyle; the Text
+      // itself inherits it, so read the resolved style from the context.
+      final ctx = tester.element(find.text(item.timeRange));
+      expect(DefaultTextStyle.of(ctx).style.fontWeight, FontWeight.w700);
+      expect(time.style?.fontWeight ?? DefaultTextStyle.of(ctx).style.fontWeight,
+          FontWeight.w700);
       expect(find.text('Thu'), findsOneWidget);
     });
 
@@ -369,7 +374,8 @@ void main() {
     await tester.pumpWidget(
       MaterialApp(
         theme: AppTheme.light(),
-        home: MediaQuery.withNoAnimation(
+        home: MediaQuery(
+          data: const MediaQueryData(disableAnimations: true),
           child: const Scaffold(body: Center(child: LivePulse())),
         ),
       ),
@@ -385,7 +391,7 @@ void main() {
   testWidgets('class card shows a live pulse only for the live status', (
     tester,
   ) async {
-    final item = ClassItem(
+    final item = const ClassItem(
       subject: 'Algorithms',
       room: 'Room 12',
       professor: 'Prof. Lee',
@@ -395,12 +401,12 @@ void main() {
     );
 
     await tester.pumpWidget(
-      _host(const ClassCard(item: item, status: ClassStatus.upcoming)),
+      _host(ClassCard(item: item, status: ClassStatus.upcoming)),
     );
     expect(find.byType(LivePulse), findsNothing);
 
     await tester.pumpWidget(
-      _host(const ClassCard(item: item, status: ClassStatus.live)),
+      _host(ClassCard(item: item, status: ClassStatus.live)),
     );
     expect(find.byType(LivePulse), findsOneWidget);
     await tester.pump(const Duration(milliseconds: 400));

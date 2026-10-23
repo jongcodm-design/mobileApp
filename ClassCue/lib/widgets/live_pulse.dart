@@ -45,22 +45,16 @@ class _LivePulseState extends State<LivePulse>
   );
 
   // Sine-shaped ease-in-out so scale and opacity reach the loop endpoints
-  // smoothly — no visible jump where the cycle restarts.
-  static final Animatable<double> _breath = Tween<double>(
-    begin: 0,
-    end: 1,
-  ).chain(CurveTween(curve: Curves.sineInOut(0.5)));
-
-  @override
-  void initState() {
-    super.initState();
-    if (!MediaQuery.disableAnimationsOf(context)) _controller.repeat();
-  }
+  // smoothly — no visible jump where the cycle restarts. A half-period of a
+  // cosine mapped to [0,1]: derivative is zero at both ends (0 and 1), which
+  // makes the forward and reverse halves join seamlessly on repeat.
+  static final Animatable<double> _breath = CurveTween(curve: _SineCurve());
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    // Keep the pulse honest when the system setting changes mid-session.
+    // MediaQuery must be read here, not in initState(). Keep the pulse honest
+    // when the system "reduce motion" setting changes mid-session.
     if (MediaQuery.disableAnimationsOf(context)) {
       _controller.stop();
     } else if (!_controller.isAnimating) {
@@ -121,4 +115,12 @@ class _LivePulseState extends State<LivePulse>
       ),
     );
   }
+}
+
+/// A sine-shaped ease-in-out curve: `t -> 0.5 - 0.5 * math.cos(math.pi * t)`.
+/// Derivative is zero at both endpoints, so a forward/reverse loop built from
+/// it has no visible snap where the cycle restarts.
+class _SineCurve extends Curve {
+  @override
+  double transformInternal(double t) => 0.5 - 0.5 * (math.cos(math.pi * t));
 }
