@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 
-import '../features/schedule_import/import_route_cache.dart';
 import '../routes/app_routes.dart';
 import '../services/reminder_service.dart';
 import '../theme/app_theme.dart';
@@ -68,7 +67,12 @@ class _SettingsScreenState extends State<SettingsScreen> {
                         ? 'Checking reminder status…'
                         : _remindersEnabled!
                         ? 'Reminders are on. You’ll get alerts before class.'
-                        : 'Reminders are off. Turn on to get alerts.',
+                        : 'Reminders are off. Tap to get an alert 10 minutes before class.',
+                    badge: _remindersEnabled == null
+                        ? null
+                        : _remindersEnabled!
+                        ? 'On'
+                        : 'Off',
                     route: AppRoutes.reminders,
                   ),
                   const _SettingsRowData(
@@ -107,6 +111,7 @@ class _SettingsRowData {
     required this.subtitle,
     required this.route,
     this.arguments,
+    this.badge,
   });
 
   final IconData icon;
@@ -114,6 +119,9 @@ class _SettingsRowData {
   final String subtitle;
   final String route;
   final Object? arguments;
+
+  /// Short state label shown at the row's end, such as "On" or "Off".
+  final String? badge;
 }
 
 /// A grouped panel of rows separated by hairlines. One surface per group,
@@ -123,6 +131,42 @@ class _SettingsGroup extends StatelessWidget {
 
   final String title;
   final List<_SettingsRowData> rows;
+
+  /// The state label (when set) followed by the disclosure chevron.
+  Widget _rowTrailing(BuildContext context, _SettingsRowData row) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    final badge = row.badge;
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (badge != null) ...[
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: badge == 'Off'
+                  ? scheme.primary
+                  : scheme.surfaceContainerHighest,
+              borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+            ),
+            child: Text(
+              badge,
+              style: textTheme.labelSmall?.copyWith(
+                fontWeight: FontWeight.w800,
+                color: badge == 'Off' ? scheme.onPrimary : scheme.onSurface,
+              ),
+            ),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Icon(
+          Icons.chevron_right_rounded,
+          size: 18,
+          color: scheme.onSurfaceVariant,
+        ),
+      ],
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -149,16 +193,13 @@ class _SettingsGroup extends StatelessWidget {
                   icon: rows[i].icon,
                   title: rows[i].title,
                   subtitle: rows[i].subtitle,
+                  trailing: _rowTrailing(context, rows[i]),
                   onTap: () {
-                    if (rows[i].route == AppRoutes.importSchedule) {
-                      openOrResumeImport(context);
-                    } else {
-                      Navigator.pushNamed(
-                        context,
-                        rows[i].route,
-                        arguments: rows[i].arguments,
-                      );
-                    }
+                    Navigator.pushNamed(
+                      context,
+                      rows[i].route,
+                      arguments: rows[i].arguments,
+                    );
                   },
                 ),
               ],

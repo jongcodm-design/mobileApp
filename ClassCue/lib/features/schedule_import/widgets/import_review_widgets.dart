@@ -315,16 +315,16 @@ class _ImportScanProgressState extends State<ImportScanProgress> {
                       label: 'Cancelling scan',
                       liveRegion: true,
                       child: const SizedBox(
-                        width: 72,
-                        height: 72,
+                        width: 32,
+                        height: 32,
                         child: CircularProgressIndicator(
-                          strokeWidth: 5.5,
+                          strokeWidth: 3,
                           valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
                           backgroundColor: Color(0xFF2A2A2A),
                         ),
                       ),
                     ),
-                      const SizedBox(height: 20),
+                      const SizedBox(height: 12),
                       Text(
                         'Cancelling scan',
                         textAlign: TextAlign.center,

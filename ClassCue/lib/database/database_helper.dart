@@ -2,6 +2,7 @@ import 'package:flutter/foundation.dart';
 import 'package:path/path.dart';
 import 'package:sqflite/sqflite.dart';
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 
 class DatabaseHelper extends ChangeNotifier {
   DatabaseHelper._();
@@ -9,13 +10,16 @@ class DatabaseHelper extends ChangeNotifier {
 
   Database? _db;
 
+  /// File name of the database. Tests set their own name so they never share a file.
+  static String databaseName = 'class_schedule.db';
+
   Future<Database> get _database async => _db ??= await _open();
 
   Future<Database> _open() async {
-    final path = join(await getDatabasesPath(), 'class_schedule.db');
+    final path = join(await getDatabasesPath(), databaseName);
     return openDatabase(
       path,
-      version: 3,
+      version: 5,
       onCreate: (db, version) async {
         await db.execute('''
           CREATE TABLE classes (
@@ -36,6 +40,7 @@ class DatabaseHelper extends ChangeNotifier {
           )
         ''');
         await _createValidationTriggers(db);
+        await _createClassStatusTable(db);
       },
       onUpgrade: (db, oldVersion, newVersion) async {
         // Do not rebuild or delete the existing table: users' saved classes
@@ -50,8 +55,137 @@ class DatabaseHelper extends ChangeNotifier {
             "WHERE lower(trim(room)) = 'unknown room'",
           );
         }
+        // Version 4: per-class statuses (not attending / cancelled).
+        if (oldVersion < 4) {
+          await _createClassStatusTable(db);
+        }
+        // Version 5: 'finished' status, and several date ranges per class.
+        if (oldVersion < 5) {
+          await _rebuildClassStatusTable(db);
+        }
       },
     );
+  }
+
+  static String _classStatusSchema(String table) => '''
+      CREATE TABLE IF NOT EXISTS $table (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        class_id INTEGER NOT NULL,
+        status TEXT NOT NULL CHECK (status IN ('finished', 'not_attending', 'cancelled')),
+        start_date TEXT NOT NULL,
+        end_date TEXT,
+        CHECK (end_date IS NULL OR end_date >= start_date)
+      )
+    ''';
+
+  Future<void> _createClassStatusTable(DatabaseExecutor db) async {
+    await db.execute(_classStatusSchema('class_status'));
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_class_status_class ON class_status (class_id)',
+    );
+  }
+
+  /// Copies existing rows into a table with the current schema. Rows are kept as they are.
+  Future<void> _rebuildClassStatusTable(DatabaseExecutor db) async {
+    await db.execute(_classStatusSchema('class_status_v5'));
+    // Version 4 rows have no id column (class_id was the key), so ids are assigned here.
+    await db.execute('''
+      INSERT INTO class_status_v5 (class_id, status, start_date, end_date)
+      SELECT class_id, status, start_date, end_date FROM class_status
+    ''');
+    await db.execute('DROP TABLE class_status');
+    await db.execute('ALTER TABLE class_status_v5 RENAME TO class_status');
+    await db.execute(
+      'CREATE INDEX IF NOT EXISTS idx_class_status_class ON class_status (class_id)',
+    );
+  }
+
+  Future<ClassStatuses> getClassStatuses() async {
+    final db = await _database;
+    final rows = await db.query('class_status', orderBy: 'start_date, id');
+    final result = <int, List<ClassStatusEntry>>{};
+    for (final row in rows) {
+      final entry = ClassStatusEntry.fromMap(row);
+      result.putIfAbsent(entry.classId, () => []).add(entry);
+    }
+    return result;
+  }
+
+  Future<List<ClassStatusEntry>> _statusRowsFor(
+    DatabaseExecutor db,
+    int classId,
+  ) async {
+    final rows = await db.query(
+      'class_status',
+      where: 'class_id = ?',
+      whereArgs: [classId],
+      orderBy: 'start_date, id',
+    );
+    return [for (final row in rows) ClassStatusEntry.fromMap(row)];
+  }
+
+  /// Applies [incoming] to its class, replacing any days it overlaps.
+  /// Returns the class's statuses from before the change, so it can be undone.
+  Future<List<ClassStatusEntry>> setClassStatus(ClassStatusEntry incoming) async {
+    final db = await _database;
+    late List<ClassStatusEntry> before;
+    await db.transaction((txn) async {
+      before = await _statusRowsFor(txn, incoming.classId);
+      final after = replaceStatusRange(before, incoming);
+      await txn.delete(
+        'class_status',
+        where: 'class_id = ?',
+        whereArgs: [incoming.classId],
+      );
+      for (final entry in after) {
+        await txn.insert('class_status', entry.toMap());
+      }
+    });
+    notifyListeners();
+    return before;
+  }
+
+  /// Clears the status for [day] only. Other days in a longer range keep their status.
+  /// Returns the class's statuses from before, so it can be undone.
+  Future<List<ClassStatusEntry>> clearClassStatus(
+    ClassStatusEntry entry, {
+    required String day,
+  }) async {
+    final db = await _database;
+    late List<ClassStatusEntry> before;
+    await db.transaction((txn) async {
+      before = await _statusRowsFor(txn, entry.classId);
+      final after = clearStatusOnDay(before, entry, day);
+      await txn.delete(
+        'class_status',
+        where: 'class_id = ?',
+        whereArgs: [entry.classId],
+      );
+      for (final kept in after) {
+        await txn.insert('class_status', kept.toMap());
+      }
+    });
+    notifyListeners();
+    return before;
+  }
+
+  /// Puts back the statuses a change replaced. [before] comes from setClassStatus or clearClassStatus.
+  Future<void> restoreClassStatuses(
+    int classId,
+    List<ClassStatusEntry> before,
+  ) async {
+    final db = await _database;
+    await db.transaction((txn) async {
+      await txn.delete(
+        'class_status',
+        where: 'class_id = ?',
+        whereArgs: [classId],
+      );
+      for (final entry in before) {
+        await txn.insert('class_status', entry.toMap());
+      }
+    });
+    notifyListeners();
   }
 
   Future<void> _createValidationTriggers(DatabaseExecutor db) async {
@@ -295,6 +429,12 @@ class DatabaseHelper extends ChangeNotifier {
     return restored;
   }
 
+  /// The statuses one class has now. Read before a delete, so Undo can restore them.
+  Future<List<ClassStatusEntry>> statusesForClass(int classId) async {
+    final db = await _database;
+    return _statusRowsFor(db, classId);
+  }
+
   // DELETE
   Future<int> delete(int id) async {
     final db = await _database;
@@ -303,6 +443,7 @@ class DatabaseHelper extends ChangeNotifier {
       where: 'id = ?',
       whereArgs: [id],
     );
+    await db.delete('class_status', where: 'class_id = ?', whereArgs: [id]);
     if (deleted > 0) notifyListeners();
     return deleted;
   }

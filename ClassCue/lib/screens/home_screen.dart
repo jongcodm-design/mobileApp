@@ -2,9 +2,10 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import '../database/database_helper.dart';
-import '../features/schedule_import/import_route_cache.dart';
-import '../models/class_item.dart';
 import '../routes/app_routes.dart';
+import '../models/class_item.dart';
+import '../models/class_status.dart';
+import '../widgets/day_status_sheet.dart';
 import '../utils/next_class.dart';
 import '../widgets/class_card.dart';
 import '../widgets/class_delete_undo.dart';
@@ -25,6 +26,7 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   final _db = DatabaseHelper.instance;
   List<ClassItem> _classes = [];
+  ClassStatuses _statuses = {};
   bool _loading = true;
   String? _error;
   int _loadVersion = 0;
@@ -87,9 +89,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     final version = ++_loadVersion;
     try {
       final list = await _db.getAll();
+      final statuses = await _db.getClassStatuses().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        // Statuses are secondary. If they can't be read, show the schedule without them.
+        debugPrint('Class statuses failed to load: $error\n$stackTrace');
+        return <int, List<ClassStatusEntry>>{};
+      });
       if (!mounted || version != _loadVersion) return;
       setState(() {
         _classes = list;
+        _statuses = statuses;
         _loading = false;
         _error = null;
       });
@@ -109,6 +120,35 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
     _load();
   }
 
+  /// The free-time card: all done for today, a weekday with no classes, or a
+  /// weekend. It shows only the status, never the next class.
+  Widget _celebrationHero({required bool allDone, required DateTime now}) {
+    final isWeekend = now.weekday >= DateTime.saturday;
+    final String title;
+    final String subtitle;
+    final IconData icon;
+    if (allDone) {
+      title = 'All done for today';
+      subtitle = 'Every class today is finished. Nice work.';
+      icon = Icons.check_circle_outline_rounded;
+    } else if (isWeekend) {
+      title = 'Weekend off';
+      subtitle = 'No classes today. Enjoy your break.';
+      icon = Icons.weekend_outlined;
+    } else {
+      title = 'No classes today';
+      subtitle = 'Nothing scheduled. Enjoy the open time.';
+      icon = Icons.wb_sunny_outlined;
+    }
+
+    return NextClassCard.celebration(
+      key: const ValueKey('next-class-celebration'),
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+    );
+  }
+
   Future<void> _open(String route, [Object? args]) async {
     await Navigator.pushNamed(context, route, arguments: args);
     _load();
@@ -122,18 +162,22 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
   Widget build(BuildContext context) {
     final now = DateTime.now();
     final nowMinutes = now.hour * 60 + now.minute;
-    final next = findNextClass(_classes, now);
+    final next = findNextClass(_classes, now, statuses: _statuses);
     final today = _classes.where((c) => c.day == now.weekday).toList()
       ..sort((a, b) => a.startMinutes.compareTo(b.startMinutes));
     final hasTodayClasses = today.isNotEmpty;
     final nextId = next?.item.id;
     final doneCount = today
-        .where((c) => classStatusAt(c, nowMinutes) == ClassStatus.done)
+        .where(
+          (c) =>
+              classStatusAt(c, nowMinutes) == ClassStatus.done ||
+              activeDayStatus(_statuses, c.id, now) != null,
+        )
         .length;
     final allDoneForToday = hasTodayClasses && doneCount == today.length;
     final isFreeDay = !hasTodayClasses && _classes.isNotEmpty;
     final isCelebration =
-        (allDoneForToday || isFreeDay) && next != null && !next.isNow;
+        (allDoneForToday || isFreeDay) && (next == null || !next.isNow);
 
     return Scaffold(
       appBar: AppBar(
@@ -197,13 +241,18 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                     opacity: animation,
                                     child: child,
                                   ),
-                              child: next == null
+                              child: isCelebration
+                                  ? _celebrationHero(
+                                      allDone: allDoneForToday,
+                                      now: now,
+                                    )
+                                  : next == null
                                   ? const NextClassCard.empty(
                                       key: ValueKey('next-class-empty'),
                                     )
                                   : NextClassCard(
                                       key: ValueKey(
-                                        '${next.item.day}:${next.item.startMinutes}:${next.item.subject}:${next.isNow}:$isCelebration',
+                                        '${next.item.day}:${next.item.startMinutes}:${next.item.subject}:${next.isNow}',
                                       ),
                                       label: next.isNow
                                           ? 'In class'
@@ -221,24 +270,6 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                                           : next.item.professor.trim(),
                                       time: next.item.timeRange,
                                       whenText: next.whenText,
-                                      celebrationTitle: isCelebration
-                                          ? (allDoneForToday
-                                              ? 'All classes done'
-                                              : 'No classes today')
-                                          : null,
-                                      celebrationSubtitle: isCelebration
-                                          ? (allDoneForToday
-                                              ? 'Good job today — rest up and recharge.'
-                                              : 'Enjoy your free time and recharge.')
-                                          : null,
-                                      celebrationIcon: isCelebration
-                                          ? (allDoneForToday
-                                              ? Icons.check_circle_outline_rounded
-                                              : Icons.wb_sunny_outlined)
-                                          : null,
-                                      dayPillText: isCelebration
-                                          ? next.dayPillText(now)
-                                          : null,
                                       onLongPress: () =>
                                           _deleteClass(next.item),
                                     ),
@@ -288,12 +319,25 @@ class _HomeScreenState extends State<HomeScreen> with WidgetsBindingObserver {
                             ClassCard(
                               item: c,
                               status: classStatusAt(c, nowMinutes),
+                              statusEntry: activeStatusEntry(_statuses, c.id, now),
+                              onTap: () => showDayStatusSheet(
+                                context,
+                                item: c,
+                                date: now,
+                                current: activeStatusEntry(_statuses, c.id, now),
+                              ),
                               // The next class in the list gets the same accent
                               // as the hero, so the list links back to it.
                               isNext:
                                   nextId != null &&
                                   c.id == nextId &&
                                   !next!.isNow,
+                              // The orange time follows the hero: the class in
+                              // progress, or the next one once the current is marked.
+                              isFocus:
+                                  nextId != null &&
+                                  c.id == nextId &&
+                                  !isCelebration,
                               onEdit: () => _open(AppRoutes.classForm, c),
                               onDelete: () => _deleteClass(c),
                               onLongPress: () => _deleteClass(c),
@@ -363,7 +407,8 @@ class _TodayEmptyState extends StatelessWidget {
           label: const Text('Add a class'),
         ),
         OutlinedButton.icon(
-          onPressed: () => openOrResumeImport(context),
+          onPressed: () => Navigator.of(context, rootNavigator: true)
+              .pushNamed<void>(AppRoutes.importSchedule),
           icon: const Icon(Icons.upload_file_outlined),
           label: const Text('Import a timetable'),
         ),

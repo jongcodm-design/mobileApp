@@ -2,8 +2,9 @@ import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
 
-import '../features/schedule_import/import_route_cache.dart';
+import '../routes/app_routes.dart';
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 import '../theme/app_theme.dart';
 import 'campus_break_divider.dart';
 import 'class_card.dart';
@@ -23,6 +24,8 @@ class WeekAgendaView extends StatelessWidget {
     required this.selectedDay,
     required this.onSelectDay,
     this.onTap,
+    this.statusFor,
+    this.focusClassId,
     required this.onEdit,
     required this.onLongPress,
     required this.onAddClassForDay,
@@ -35,6 +38,10 @@ class WeekAgendaView extends StatelessWidget {
   final int selectedDay;
   final ValueChanged<int> onSelectDay;
   final ValueChanged<ClassItem>? onTap;
+  final ClassStatusEntry? Function(ClassItem item)? statusFor;
+
+  /// The class the hero focuses on, when it is today's. Its time takes the live color.
+  final int? focusClassId;
   final ValueChanged<ClassItem> onEdit;
   final ValueChanged<ClassItem> onLongPress;
   final ValueChanged<int> onAddClassForDay;
@@ -152,7 +159,10 @@ class WeekAgendaView extends StatelessWidget {
                               label: const Text('Add a class'),
                             ),
                             OutlinedButton.icon(
-                              onPressed: () => openOrResumeImport(context),
+                              onPressed: () => Navigator.of(
+                                context,
+                                rootNavigator: true,
+                              ).pushNamed<void>(AppRoutes.importSchedule),
                               icon: const Icon(Icons.upload_file_outlined),
                               label: const Text('Import a timetable'),
                             ),
@@ -199,6 +209,8 @@ class WeekAgendaView extends StatelessWidget {
                       return ClassCard(
                         item: item,
                         status: isToday ? classStatusAt(item, nowMinutes) : null,
+                        statusEntry: statusFor?.call(item),
+                        isFocus: focusClassId != null && item.id == focusClassId,
                         onTap: onTap != null ? () => onTap!(item) : null,
                         onEdit: () => onEdit(item),
                         onDelete: () => onLongPress(item),

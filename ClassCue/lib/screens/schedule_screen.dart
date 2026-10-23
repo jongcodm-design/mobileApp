@@ -4,6 +4,9 @@ import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
 import '../models/class_item.dart';
+import '../models/class_status.dart';
+import '../utils/next_class.dart';
+import '../widgets/day_status_sheet.dart';
 import '../routes/app_routes.dart';
 import '../widgets/app_state_transition.dart';
 import '../widgets/class_delete_undo.dart';
@@ -27,6 +30,7 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     with WidgetsBindingObserver {
   final _db = DatabaseHelper.instance;
   List<ClassItem> _classes = [];
+  ClassStatuses _statuses = {};
   bool _loading = true;
   String? _error;
   int _selectedDay = DateTime.now().weekday;
@@ -76,13 +80,30 @@ class _ScheduleScreenState extends State<ScheduleScreen>
     if (mounted) _load();
   }
 
+  /// The class the hero focuses on, when it is today's. The week view highlights it.
+  int? _focusClassId() {
+    final now = DateTime.now();
+    final next = findNextClass(_classes, now, statuses: _statuses);
+    if (next == null || next.item.day != now.weekday) return null;
+    return next.item.id;
+  }
+
   Future<void> _load() async {
     final version = ++_loadVersion;
     try {
       final classes = await _db.getAll();
+      final statuses = await _db.getClassStatuses().catchError((
+        Object error,
+        StackTrace stackTrace,
+      ) {
+        // Statuses are secondary. If they can't be read, show the schedule without them.
+        debugPrint('Class statuses failed to load: $error\n$stackTrace');
+        return <int, List<ClassStatusEntry>>{};
+      });
       if (!mounted || version != _loadVersion) return;
       setState(() {
         _classes = classes;
+        _statuses = statuses;
         _loading = false;
         _error = null;
       });
@@ -158,6 +179,21 @@ class _ScheduleScreenState extends State<ScheduleScreen>
                       nowMinutes: nowMinutes,
                       selectedDay: _selectedDay,
                       onSelectDay: _selectDay,
+                      focusClassId: _focusClassId(),
+                      statusFor: (item) => activeStatusEntry(
+                        _statuses,
+                        item.id,
+                        dateForWeekday(DateTime.now(), item.day),
+                      ),
+                      onTap: (item) async {
+                        final date = dateForWeekday(DateTime.now(), item.day);
+                        await showDayStatusSheet(
+                          context,
+                          item: item,
+                          date: date,
+                          current: activeStatusEntry(_statuses, item.id, date),
+                        );
+                      },
                       onEdit: (item) => _open(item),
                       onLongPress: _deleteClass,
                       onAddClassForDay: _openAddClassForDay,

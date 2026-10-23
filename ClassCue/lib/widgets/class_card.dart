@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 import '../theme/app_theme.dart';
 import 'live_pulse.dart';
+import 'pill.dart';
 
 /// Where a class sits relative to the current time. Only used on today.
 enum ClassStatus { done, live, upcoming }
@@ -16,11 +18,10 @@ ClassStatus classStatusAt(ClassItem item, int nowMinutes) {
   return ClassStatus.upcoming;
 }
 
-/// One class on a timeline: a rail with a status marker on the left, and a
-/// card with the time, subject and details on the right.
+/// One class: a filled card with the time, subject and details.
 ///
-/// Pass [status] only when the list is for today; without it the rail shows
-/// neutral markers, which is right for any other day of the week.
+/// Pass [status] only when the list is for today. A class the user has marked
+/// is never shown as live, because the mark says it is not happening for them.
 class ClassCard extends StatelessWidget {
   final ClassItem item;
   final VoidCallback? onTap;
@@ -30,9 +31,16 @@ class ClassCard extends StatelessWidget {
   final bool showDay;
   final ClassStatus? status;
 
-  /// True for the class the hero block is showing as "Next up". It gets the
-  /// same accent so the list links back to the hero.
+  /// The status the user set for this occurrence, with its duration.
+  final ClassStatusEntry? statusEntry;
+
+  /// True for the class the hero block is showing as "Next up".
   final bool isNext;
+
+  /// True for the class the hero is focused on (in progress, or the next one).
+  /// Its time takes the live color, so the orange moves to the next class when
+  /// the current one is marked finished. The NOW tag still shows only when live.
+  final bool isFocus;
 
   const ClassCard({
     super.key,
@@ -43,7 +51,9 @@ class ClassCard extends StatelessWidget {
     this.onDelete,
     this.showDay = false,
     this.status,
+    this.statusEntry,
     this.isNext = false,
+    this.isFocus = false,
   });
 
   @override
@@ -55,11 +65,13 @@ class ClassCard extends StatelessWidget {
         item.professor.trim().isNotEmpty &&
         item.professor.trim() != 'Not specified';
     final room = formatRoom(item.room);
-    final isLive = status == ClassStatus.live;
-    final isDone = status == ClassStatus.done;
+    final mark = statusEntry?.status;
+    final timeEnded = status == ClassStatus.done;
+    final isLive = status == ClassStatus.live && mark == null;
+    final isDone = timeEnded || mark == DayStatus.finished;
     final hasMenu = onEdit != null || onDelete != null;
 
-    final timeColor = isLive
+    final timeColor = (isLive || (isFocus && !isDone && mark == null))
         ? live
         : isDone
         ? scheme.onSurfaceVariant
@@ -69,14 +81,11 @@ class ClassCard extends StatelessWidget {
       color: scheme.onSurfaceVariant,
       fontWeight: FontWeight.w500,
     );
-    // Match the component sheet: quiet filled rows, with a slightly darker
-    // neutral fill for the class highlighted as next. Status is communicated
-    // through text color rather than heavy borders or shadows.
-    final cardFill = isNext
-        ? scheme.surfaceContainerHighest
-        : isDone
-        ? scheme.surfaceContainerLow.withValues(alpha: 0.6)
-        : scheme.surfaceContainer;
+    final cardFill = isNext ? scheme.surfaceContainerHighest : scheme.surfaceContainer;
+
+    final markLabel = mark == null || statusEntry == null
+        ? null
+        : '${mark.label} · ${statusDurationLabel(statusEntry!, DateTime.now())}';
 
     return Semantics(
       container: true,
@@ -88,6 +97,7 @@ class ClassCard extends StatelessWidget {
         if (isLive) 'in progress',
         if (isDone) 'finished',
         if (isNext) 'next class',
+        ?markLabel,
       ].join(', '),
       child: Padding(
         padding: const EdgeInsets.symmetric(horizontal: AppTheme.pageInset),
@@ -99,7 +109,7 @@ class ClassCard extends StatelessWidget {
                 child: Column(
                   children: [
                     Opacity(
-                      opacity: isDone ? 0.5 : 1.0,
+                      opacity: (isDone || mark != null) ? 0.5 : 1.0,
                       child: Material(
                         color: cardFill,
                         shape: RoundedRectangleBorder(
@@ -107,156 +117,144 @@ class ClassCard extends StatelessWidget {
                         ),
                         clipBehavior: Clip.antiAlias,
                         child: InkWell(
-                        onTap: onTap,
-                        onLongPress: onLongPress,
-                        child: Padding(
-                          padding: EdgeInsets.fromLTRB(
-                            16,
-                            14,
-                            hasMenu ? 4 : 16,
-                            14,
-                          ),
-                          child: Row(
-                            children: [
-                              Expanded(
-                                child: Column(
-                                  crossAxisAlignment: CrossAxisAlignment.start,
-                                  children: [
-                                    Row(
-                                      children: [
-                                        Expanded(
-                                          child: AnimatedDefaultTextStyle(
-                                            duration: AppTheme.motionDuration(
-                                              context,
-                                              AppTheme.motionStandard,
-                                            ),
-                                            curve: AppTheme.motionEaseOut,
-                                            style:
-                                                textTheme.labelLarge
-                                                    ?.copyWith(
-                                                      color: timeColor,
-                                                      fontWeight:
-                                                          FontWeight.w700,
-                                                      fontFeatures: const [
-                                                        FontFeature
-                                                            .tabularFigures(),
-                                                      ],
-                                                    ) ??
-                                                const TextStyle(),
-                                            child: Text(
-                                              item.timeRange,
-                                              maxLines: 1,
-                                              overflow: TextOverflow.ellipsis,
-                                            ),
-                                          ),
-                                        ),
-                                        if (isLive) ...[
-                                          // The one live signal in the list:
-                                          // a breathing dot marking "now".
-                                          const LivePulse(size: 7),
-                                          const SizedBox(width: 8),
-                                        ],
-                                        if (showDay)
+                          onTap: onTap,
+                          onLongPress: onLongPress,
+                          child: Padding(
+                            padding: EdgeInsets.fromLTRB(
+                              16,
+                              14,
+                              hasMenu ? 4 : 16,
+                              14,
+                            ),
+                            child: Row(
+                              children: [
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      // Time, NOW tag and status pill share one line.
+                                      // A long pill wraps to the next line instead of
+                                      // pushing the time off the card.
+                                      Wrap(
+                                        spacing: 8,
+                                        runSpacing: 6,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
                                           Text(
-                                            item.dayName.substring(0, 3),
-                                            style: textTheme.labelMedium
-                                                ?.copyWith(
-                                                  color: scheme.onSurfaceVariant,
-                                                ),
-                                          ),
-                                      ],
-                                    ),
-                                    const SizedBox(height: 4),
-                                    Text(
-                                      item.subject,
-                                      maxLines: 2,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: textTheme.titleMedium?.copyWith(
-                                        color: subjectColor,
-                                        fontWeight: FontWeight.w800,
-                                      ),
-                                    ),
-                                    const SizedBox(height: 6),
-                                    Wrap(
-                                      spacing: 12,
-                                      runSpacing: 4,
-                                      children: [
-                                        _ClassMeta(
-                                          icon: Icons.location_on_outlined,
-                                          label: room,
-                                          style: detailStyle,
-                                        ),
-                                        if (hasProfessor)
-                                          _ClassMeta(
-                                            icon: Icons.person_outline_rounded,
-                                            label: item.professor.trim(),
-                                            style: detailStyle,
-                                          ),
-                                      ],
-                                    ),
-                                  ],
-                                ),
-                              ),
-                              if (hasMenu)
-                                PopupMenuButton<_ClassAction>(
-                                  tooltip: 'More options',
-                                  icon: Icon(
-                                    Icons.more_vert_rounded,
-                                    color: scheme.onSurfaceVariant,
-                                  ),
-                                  onSelected: (action) {
-                                    switch (action) {
-                                      case _ClassAction.edit:
-                                        onEdit?.call();
-                                      case _ClassAction.delete:
-                                        onDelete?.call();
-                                    }
-                                  },
-                                  itemBuilder: (context) => [
-                                    if (onEdit != null)
-                                      const PopupMenuItem(
-                                        value: _ClassAction.edit,
-                                        child: Row(
-                                          children: [
-                                            Icon(Icons.edit_outlined, size: 20),
-                                            SizedBox(width: AppTheme.itemGap),
-                                            Text('Edit class'),
-                                          ],
-                                        ),
-                                      ),
-                                    if (onDelete != null)
-                                      PopupMenuItem(
-                                        value: _ClassAction.delete,
-                                        child: Row(
-                                          children: [
-                                            Icon(
-                                              Icons.delete_outline_rounded,
-                                              size: 20,
-                                              color: scheme.error,
+                                            item.timeRange,
+                                            maxLines: 1,
+                                            overflow: TextOverflow.ellipsis,
+                                            style: textTheme.labelLarge?.copyWith(
+                                              color: timeColor,
+                                              fontWeight: FontWeight.w700,
+                                              fontFeatures: const [
+                                                FontFeature.tabularFigures(),
+                                              ],
                                             ),
-                                            const SizedBox(
-                                              width: AppTheme.itemGap,
-                                            ),
+                                          ),
+                                          if (isLive)
+                                            _NowTag(color: live, pulse: LivePulse(size: 7, color: Colors.white.withValues(alpha: 0.95))),
+                                          if (isNext && !isLive && !isDone && mark == null)
+                                            const _NextUpTag(),
+                                          if (mark != null && markLabel != null)
+                                            _StatusPill(status: mark, label: markLabel),
+                                          if (showDay)
                                             Text(
-                                              'Delete class',
-                                              style: TextStyle(
-                                                color: scheme.error,
+                                              item.dayName.substring(0, 3),
+                                              style: textTheme.labelMedium?.copyWith(
+                                                color: scheme.onSurfaceVariant,
                                               ),
                                             ),
-                                          ],
+                                        ],
+                                      ),
+                                      const SizedBox(height: 6),
+                                      Text(
+                                        item.subject,
+                                        maxLines: 2,
+                                        overflow: TextOverflow.ellipsis,
+                                        style: textTheme.titleMedium?.copyWith(
+                                          color: subjectColor,
+                                          fontWeight: FontWeight.w800,
                                         ),
                                       ),
-                                  ],
+                                      const SizedBox(height: 6),
+                                      Wrap(
+                                        spacing: 12,
+                                        runSpacing: 6,
+                                        crossAxisAlignment: WrapCrossAlignment.center,
+                                        children: [
+                                          _ClassMeta(
+                                            icon: Icons.location_on_outlined,
+                                            label: room,
+                                            style: detailStyle,
+                                          ),
+                                          if (hasProfessor)
+                                            _ClassMeta(
+                                              icon: Icons.person_outline_rounded,
+                                              label: item.professor.trim(),
+                                              style: detailStyle,
+                                            ),
+                                        ],
+                                      ),
+                                    ],
+                                  ),
                                 ),
-                            ],
+                                if (hasMenu)
+                                  PopupMenuButton<_ClassAction>(
+                                    tooltip: 'More options',
+                                    icon: Icon(
+                                      Icons.more_vert_rounded,
+                                      color: scheme.onSurfaceVariant,
+                                    ),
+                                    onSelected: (action) {
+                                      switch (action) {
+                                        case _ClassAction.edit:
+                                          onEdit?.call();
+                                        case _ClassAction.delete:
+                                          onDelete?.call();
+                                      }
+                                    },
+                                    itemBuilder: (context) => [
+                                      if (onEdit != null)
+                                        const PopupMenuItem(
+                                          value: _ClassAction.edit,
+                                          child: Row(
+                                            children: [
+                                              Icon(Icons.edit_outlined, size: 20),
+                                              SizedBox(width: AppTheme.itemGap),
+                                              Text('Edit class'),
+                                            ],
+                                          ),
+                                        ),
+                                      if (onDelete != null)
+                                        PopupMenuItem(
+                                          value: _ClassAction.delete,
+                                          child: Row(
+                                            children: [
+                                              Icon(
+                                                Icons.delete_outline_rounded,
+                                                size: 20,
+                                                color: scheme.error,
+                                              ),
+                                              const SizedBox(width: AppTheme.itemGap),
+                                              Text(
+                                                'Delete class',
+                                                style: TextStyle(color: scheme.error),
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                    ],
+                                  ),
+                              ],
+                            ),
                           ),
                         ),
                       ),
                     ),
-                  ),
-                  // Gap below each card. It sits inside the row, so the rail
-                  // runs continuously from one class to the next.
-                  const SizedBox(height: 10),
+                    // Gap below each card. It sits inside the row, so the rail
+                    // runs continuously from one class to the next.
+                    const SizedBox(height: 10),
                   ],
                 ),
               ),
@@ -269,6 +267,71 @@ class ClassCard extends StatelessWidget {
 }
 
 enum _ClassAction { edit, delete }
+
+/// The NOW label: a small pill in the app's live color, with text in the
+/// theme's inverse ink so it reads on both light and dark schemes.
+class _NowTag extends StatelessWidget {
+  const _NowTag({required this.color, this.pulse});
+
+  final Color color;
+  final Widget? pulse;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: color,
+        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          if (pulse != null) ...[
+            pulse!,
+            const SizedBox(width: 5),
+          ],
+          Text(
+            'NOW',
+            style: textTheme.labelMedium?.copyWith(
+              color: scheme.onPrimary,
+              fontWeight: FontWeight.w800,
+              letterSpacing: 0.6,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// "Next up" pill on the class the hero is showing as next. Filled with the
+/// inverse ink, like the hero block, so it matches the hero's label.
+class _NextUpTag extends StatelessWidget {
+  const _NextUpTag();
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final textTheme = Theme.of(context).textTheme;
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+      decoration: BoxDecoration(
+        color: scheme.primary,
+        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+      ),
+      child: Text(
+        'Next up',
+        style: textTheme.labelMedium?.copyWith(
+          color: scheme.onPrimary,
+          fontWeight: FontWeight.w700,
+        ),
+      ),
+    );
+  }
+}
 
 class _ClassMeta extends StatelessWidget {
   const _ClassMeta({required this.icon, required this.label, this.style});
@@ -292,4 +355,33 @@ class _ClassMeta extends StatelessWidget {
       ),
     ],
   );
+}
+
+/// Status pill with the app's theme colors: green for finished, amber for
+/// cancelled, neutral for not attending.
+class _StatusPill extends StatelessWidget {
+  const _StatusPill({required this.status, required this.label});
+
+  final DayStatus status;
+  final String label;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    final (background, foreground) = switch (status) {
+      DayStatus.finished => (
+        AppTheme.successBackgroundOf(context),
+        AppTheme.successForegroundOf(context),
+      ),
+      DayStatus.cancelled => (
+        AppTheme.warningBackgroundOf(context),
+        AppTheme.warningForegroundOf(context),
+      ),
+      DayStatus.notAttending => (
+        scheme.surfaceContainerHighest,
+        scheme.onSurface,
+      ),
+    };
+    return Pill(label: label, background: background, foreground: foreground);
+  }
 }

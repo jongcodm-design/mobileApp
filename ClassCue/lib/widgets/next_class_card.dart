@@ -37,9 +37,28 @@ class NextClassCard extends StatelessWidget {
     this.dayPillText,
   });
 
+  /// Celebration only ("Good job"). Shows no class details.
+  const NextClassCard.celebration({
+    super.key,
+    required String title,
+    required String subtitle,
+    required IconData icon,
+  }) : label = '',
+       subject = '',
+       room = '',
+       professor = '',
+       time = '',
+       whenText = '',
+       onTap = null,
+       onLongPress = null,
+       celebrationTitle = title,
+       celebrationSubtitle = subtitle,
+       celebrationIcon = icon,
+       dayPillText = null;
+
   const NextClassCard.empty({super.key})
-    : label = 'Next class',
-      subject = 'Your next class will appear here.',
+    : label = 'Get started',
+      subject = 'Add a class or import a timetable to begin.',
       room = '',
       professor = '',
       time = '',
@@ -67,6 +86,11 @@ class NextClassCard extends StatelessWidget {
       borderRadius: BorderRadius.circular(AppTheme.cardRadius),
     );
     final isCelebration = celebrationTitle != null;
+    // The shelf only appears when there is an upcoming class to show. Without
+    // one, the celebration stays compact instead of leaving an empty block.
+    final hasUpNext = subject.trim().isNotEmpty ||
+        whenText.trim().isNotEmpty ||
+        (dayPillText?.trim().isNotEmpty ?? false);
 
     return SizedBox(
       width: double.infinity,
@@ -102,36 +126,53 @@ class NextClassCard extends StatelessWidget {
                           crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
                             if (celebrationIcon != null) ...[
-                              Icon(
-                                celebrationIcon,
-                                size: 22,
-                                color: foreground,
+                              Container(
+                                width: 40,
+                                height: 40,
+                                alignment: Alignment.center,
+                                decoration: BoxDecoration(
+                                  color: foreground.withValues(alpha: 0.12),
+                                  borderRadius: BorderRadius.circular(
+                                    AppTheme.controlRadius,
+                                  ),
+                                ),
+                                child: Icon(
+                                  celebrationIcon,
+                                  size: 22,
+                                  color: foreground,
+                                ),
                               ),
-                              const SizedBox(width: 8),
+                              const SizedBox(width: 12),
                             ],
                             Expanded(
-                              child: Text(
-                                celebrationTitle!,
-                                style: textTheme.titleLarge?.copyWith(
-                                  color: foreground,
-                                  fontWeight: FontWeight.w800,
-                                ),
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    celebrationTitle!,
+                                    style: textTheme.titleLarge?.copyWith(
+                                      color: foreground,
+                                      fontWeight: FontWeight.w800,
+                                    ),
+                                  ),
+                                  if (celebrationSubtitle != null &&
+                                      celebrationSubtitle!.isNotEmpty) ...[
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      celebrationSubtitle!,
+                                      style: textTheme.bodyMedium?.copyWith(
+                                        color: muted,
+                                        fontWeight: FontWeight.w500,
+                                      ),
+                                    ),
+                                  ],
+                                ],
                               ),
                             ),
                           ],
                         ),
-                        if (celebrationSubtitle != null &&
-                            celebrationSubtitle!.isNotEmpty) ...[
-                          const SizedBox(height: 4),
-                          Text(
-                            celebrationSubtitle!,
-                            style: textTheme.bodySmall?.copyWith(
-                              color: muted,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 14),
+                        if (hasUpNext) const SizedBox(height: 16),
+                        if (hasUpNext)
                         Container(
                           width: double.infinity,
                           padding: const EdgeInsets.symmetric(
@@ -354,23 +395,22 @@ class _NextClassMeta extends StatelessWidget {
 }
 
 /// "Next up" / "In class".
-///
-/// The pill itself never resizes or jumps: the label crossfades when the
-/// status changes (the minute ticker flips "Next up" to "In class"), and an
-/// "In class" state carries a live pulse dot as its state indicator.
 class _StatusTag extends StatelessWidget {
   const _StatusTag({required this.label, required this.foreground});
 
   final String label;
   final Color foreground;
 
-  static const double _labelHeight = 16;
-
   @override
   Widget build(BuildContext context) {
+    final textTheme = Theme.of(context).textTheme;
     final isLive = label == 'In class';
-    final content = Padding(
+    return Container(
       padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+      decoration: BoxDecoration(
+        color: foreground.withValues(alpha: 0.12),
+        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
+      ),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [
@@ -378,10 +418,9 @@ class _StatusTag extends StatelessWidget {
             LivePulse(size: 6, color: foreground, haloOpacity: 0.3),
             const SizedBox(width: 6),
           ],
-          _CrossFadeText(
-            text: label,
-            height: _labelHeight,
-            style: Theme.of(context).textTheme.labelSmall?.copyWith(
+          Text(
+            label,
+            style: textTheme.labelSmall?.copyWith(
               color: foreground,
               fontWeight: FontWeight.w700,
               letterSpacing: 0.3,
@@ -389,64 +428,6 @@ class _StatusTag extends StatelessWidget {
           ),
         ],
       ),
-    );
-    return AnimatedContainer(
-      duration: AppTheme.motionDuration(context, AppTheme.motionStandard),
-      curve: AppTheme.motionEaseOut,
-      decoration: BoxDecoration(
-        color: foreground.withValues(alpha: 0.12),
-        borderRadius: BorderRadius.circular(AppTheme.chipRadius),
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: DefaultTextStyle(
-        style: const TextStyle(),
-        child: IntrinsicWidth(child: content),
-      ),
-    );
-  }
-}
-
-/// Crossfades between two strings without letting the shorter one collapse
-/// the row: the box keeps the width of whichever variant is widest.
-class _CrossFadeText extends StatelessWidget {
-  const _CrossFadeText({
-    required this.text,
-    required this.height,
-    required this.style,
-  });
-
-  final String text;
-  final double height;
-  final TextStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    final variant = Text(
-      text,
-      style: style,
-      maxLines: 1,
-      textAlign: TextAlign.center,
-    );
-    return Stack(
-      alignment: Alignment.center,
-      children: [
-        // Invisible widest label reserves the space so the pill never snaps.
-        Opacity(opacity: 0, child: Text('In class', style: style)),
-        AnimatedSwitcher(
-          duration: AppTheme.motionDuration(
-            context,
-            AppTheme.motionStandard,
-          ),
-          switchInCurve: AppTheme.motionEaseOut,
-          switchOutCurve: AppTheme.motionEaseOut,
-          transitionBuilder: (child, animation) =>
-              FadeTransition(opacity: animation, child: child),
-          child: KeyedSubtree(
-            key: ValueKey(text),
-            child: SizedBox(height: height, child: variant),
-          ),
-        ),
-      ],
     );
   }
 }

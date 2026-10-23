@@ -260,12 +260,7 @@ void main() {
       );
 
       final time = tester.widget<Text>(find.text(item.timeRange));
-      // The weight lives on the wrapping AnimatedDefaultTextStyle; the Text
-      // itself inherits it, so read the resolved style from the context.
-      final ctx = tester.element(find.text(item.timeRange));
-      expect(DefaultTextStyle.of(ctx).style.fontWeight, FontWeight.w700);
-      expect(time.style?.fontWeight ?? DefaultTextStyle.of(ctx).style.fontWeight,
-          FontWeight.w700);
+      expect(time.style?.fontWeight, FontWeight.w700);
       expect(find.text('Thu'), findsOneWidget);
     });
 
@@ -395,7 +390,7 @@ void main() {
       subject: 'Algorithms',
       room: 'Room 12',
       professor: 'Prof. Lee',
-      day: DateTime.monday,
+      day: 1,
       startMinutes: 8 * 60,
       endMinutes: 9 * 60 + 30,
     );

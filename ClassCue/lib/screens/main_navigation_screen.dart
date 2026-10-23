@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
-import '../features/schedule_import/import_route_cache.dart';
 import '../models/class_item.dart';
 import '../routes/app_routes.dart';
 import '../services/next_class_widget_service.dart';
@@ -18,6 +17,14 @@ import 'settings_screen.dart';
 
 class MainNavigationScreen extends StatefulWidget {
   const MainNavigationScreen({super.key});
+
+  /// Tab indexes, so other screens can ask for one without magic numbers.
+  static const todayTab = 0;
+  static const weekTab = 1;
+
+  /// Pages pushed on top of this shell (e.g. timetable import) set this to ask
+  /// for a tab once they close. The shell switches to it and clears the value.
+  static final ValueNotifier<int?> tabRequest = ValueNotifier<int?>(null);
 
   @override
   State<MainNavigationScreen> createState() => _MainNavigationScreenState();
@@ -60,6 +67,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     );
     _database.addListener(_onScheduleChanged);
     ReminderService.instance.addListener(_onReminderSettingsChanged);
+    MainNavigationScreen.tabRequest.addListener(_onTabRequested);
     unawaited(_loadReminderState());
     _minuteTimer = Timer.periodic(
       const Duration(minutes: 1),
@@ -72,6 +80,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   void dispose() {
     _database.removeListener(_onScheduleChanged);
     ReminderService.instance.removeListener(_onReminderSettingsChanged);
+    MainNavigationScreen.tabRequest.removeListener(_onTabRequested);
     _minuteTimer?.cancel();
     _widgetSyncVersion++;
     _screenOpacity.dispose();
@@ -81,6 +90,14 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   void _onScheduleChanged() {
     unawaited(_syncWidgetSchedule());
+  }
+
+  void _onTabRequested() {
+    final index = MainNavigationScreen.tabRequest.value;
+    if (index == null) return;
+    MainNavigationScreen.tabRequest.value = null;
+    if (!mounted || index < 0 || index >= _destinations.length) return;
+    _selectDestination(index);
   }
 
   void _onReminderSettingsChanged() {
@@ -97,10 +114,11 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
     final version = ++_widgetSyncVersion;
     try {
       final classes = await _database.getAll();
+      final statuses = await _database.getClassStatuses();
       if (!mounted || version != _widgetSyncVersion) return;
       _classes = classes;
       _recountToday();
-      await NextClassWidgetService.sync(classes);
+      await NextClassWidgetService.sync(classes, statuses: statuses);
     } catch (error, stackTrace) {
       debugPrint(
         'Could not load classes for the launcher widget: $error\n$stackTrace',
@@ -160,7 +178,8 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
   Future<void> _openQuickAction(String route) async {
     setState(() => _quickActionsExpanded = false);
     if (route == AppRoutes.importSchedule) {
-      openOrResumeImport(context);
+      await Navigator.of(context, rootNavigator: true)
+          .pushNamed<void>(AppRoutes.importSchedule);
       return;
     }
     final selectedDay = route == AppRoutes.classForm && _selectedIndex == 1
@@ -176,9 +195,7 @@ class _MainNavigationScreenState extends State<MainNavigationScreen>
 
   Widget _quickActionMenu() => QuickActionMenu(
     onAddClass: () => unawaited(_openQuickAction(AppRoutes.classForm)),
-    importLabel: ImportRouteCache.hasPausedImport
-        ? 'Resume import'
-        : 'Import timetable',
+    importLabel: 'Import timetable',
     onImportClass: () => unawaited(_openQuickAction(AppRoutes.importSchedule)),
   );
 

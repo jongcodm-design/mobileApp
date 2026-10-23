@@ -9,12 +9,12 @@ import 'package:path/path.dart' as p;
 import '../../database/database_helper.dart';
 import '../../models/class_item.dart';
 import '../../routes/app_routes.dart';
+import '../../screens/main_navigation_screen.dart';
 import '../../services/reminder_service.dart';
 import '../../theme/app_theme.dart';
 import '../../utils/class_text_input_rules.dart';
 import '../../widgets/app_notification.dart';
 import '../../widgets/component_kit.dart';
-import 'import_route_cache.dart';
 import 'models/import_draft.dart';
 import 'services/schedule_ocr_service.dart';
 import 'utils/timetable_parser.dart';
@@ -72,22 +72,10 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
 
   /// Draft -> short explanation for rows with conflicts / invalid details.
   Map<ImportDraft, ImportNote> _notes = {};
-  Route<dynamic>? _route;
-  bool _pausingForHome = false;
   bool _allowRoutePop = false;
-
-  bool get _hasResumableImport =>
-      _working || _selectedFilePath != null || _drafts.isNotEmpty;
-
-  @override
-  void didChangeDependencies() {
-    super.didChangeDependencies();
-    _route ??= ModalRoute.of(context);
-  }
 
   @override
   void dispose() {
-    ImportRouteCache.release(_route);
     _db.removeListener(_onScheduleChanged);
     if (_working) {
       _cancelScanRequested = true;
@@ -98,41 +86,53 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
     super.dispose();
   }
 
-  void _pauseForHome() {
-    if (_pausingForHome) return;
-    final route = _route;
-    if (route == null) return;
-    _pausingForHome = true;
-    if (_hasResumableImport) {
-      ImportRouteCache.pause(route);
-      unawaited(_pushHomeUntilImportReturns());
-    } else {
-      unawaited(
-        Navigator.of(
-          context,
-          rootNavigator: true,
-        ).pushReplacementNamed<void, void>(AppRoutes.home),
-      );
+  /// Back button and system back gesture. Returns to the screen that opened
+  /// the import. A running scan asks to stop first, and unsaved classes ask
+  /// to be discarded first.
+  Future<void> _handleBack() async {
+    if (_working) {
+      if (!_cancelScanRequested) {
+        final confirmed = await _requestScanCancellation();
+        if (!confirmed || !mounted) return;
+      }
+    } else if (_drafts.isNotEmpty) {
+      final discard = await _confirmDiscardDrafts();
+      if (!discard || !mounted) return;
     }
+    await _leaveScreen();
   }
 
-  Future<void> _pushHomeUntilImportReturns() async {
-    try {
-      await Navigator.of(
-        context,
-        rootNavigator: true,
-      ).pushNamed<void>(AppRoutes.home);
-    } finally {
-      _pausingForHome = false;
-    }
+  Future<bool> _confirmDiscardDrafts() async {
+    final discard = await showDialog<bool>(
+      context: context,
+      builder: (dialogContext) => AlertDialog(
+        title: const Text('Discard import?'),
+        content: const Text('The classes you reviewed will not be saved.'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, false),
+            child: const Text('Keep reviewing'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(dialogContext, true),
+            child: const Text('Discard'),
+          ),
+        ],
+      ),
+    );
+    return discard ?? false;
   }
 
-  Future<void> _cancelReview() async {
-    if (_working) return;
+  Future<void> _leaveScreen() async {
     setState(() => _allowRoutePop = true);
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
     Navigator.of(context, rootNavigator: true).pop();
+  }
+
+  Future<void> _cancelReview() async {
+    if (_working) return;
+    await _leaveScreen();
   }
 
   @override
@@ -192,10 +192,12 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
     });
   }
 
-  Future<void> _requestScanCancellation() async {
-    if (!_working || _cancelScanRequested) return;
+  Future<bool> _requestScanCancellation() async {
+    if (!_working || _cancelScanRequested) return false;
     final confirmed = await showCancelScanConfirmation(context);
-    if (!confirmed || !mounted || !_working || _cancelScanRequested) return;
+    if (!confirmed || !mounted || !_working || _cancelScanRequested) {
+      return false;
+    }
     setState(() {
       _cancelScanRequested = true;
       _scanDetail = 'Stopping after the current OCR step…';
@@ -209,6 +211,7 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
         TextDirection.ltr,
       );
     }
+    return true;
   }
 
   void _finishCancelledScan() {
@@ -1104,16 +1107,10 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
     return PopScope<void>(
       canPop: _allowRoutePop,
       onPopInvokedWithResult: (didPop, _) {
-        if (!didPop && !_allowRoutePop) _pauseForHome();
+        if (!didPop && !_allowRoutePop) unawaited(_handleBack());
       },
       child: Scaffold(
         appBar: AppBar(
-          automaticallyImplyLeading: false,
-          leading: IconButton(
-            tooltip: 'Pause import and go to Today',
-            onPressed: _pauseForHome,
-            icon: const Icon(Icons.home_outlined),
-          ),
           title: Text(reviewing ? 'Review import' : 'Import timetable'),
           actions: [
             if (reviewing && _selectedFilePath != null)
@@ -1625,9 +1622,18 @@ class _ImportScheduleScreenState extends State<ImportScheduleScreen> {
               runSpacing: AppTheme.itemGap,
               children: [
                 FilledButton.icon(
-                  onPressed: () => Navigator.of(
-                    context,
-                  ).pushReplacementNamed(AppRoutes.schedule),
+                  // Go back to the app shell and open its Week tab. Pushing
+                  // /schedule here would replace this page with a bare
+                  // ScheduleScreen that has no bottom navigation.
+                  onPressed: () {
+                    MainNavigationScreen.tabRequest.value =
+                        MainNavigationScreen.weekTab;
+                    Navigator.of(context).popUntil(
+                      (route) =>
+                          route.settings.name == AppRoutes.home ||
+                          route.isFirst,
+                    );
+                  },
                   icon: const Icon(Icons.calendar_month_rounded),
                   label: const Text('View schedule'),
                 ),

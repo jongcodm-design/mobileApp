@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../database/database_helper.dart';
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 import '../services/reminder_service.dart';
 import 'app_notification.dart';
 
@@ -13,7 +14,10 @@ Future<bool> deleteClassWithUndo(BuildContext context, ClassItem item) async {
   if (id == null || messenger == null) return false;
   final scheme = Theme.of(context).colorScheme;
 
+  // Read the marks first: deleting the class also deletes them.
+  List<ClassStatusEntry> marks = const [];
   try {
+    marks = await DatabaseHelper.instance.statusesForClass(id);
     final deleted = await DatabaseHelper.instance.delete(id);
     if (deleted == 0) throw StateError('Class was not found.');
   } catch (error, stackTrace) {
@@ -43,6 +47,9 @@ Future<bool> deleteClassWithUndo(BuildContext context, ClassItem item) async {
     onAction: () async {
       try {
         await DatabaseHelper.instance.restoreDeleted(item);
+        if (marks.isNotEmpty) {
+          await DatabaseHelper.instance.restoreClassStatuses(id, marks);
+        }
         try {
           await ReminderService.instance.sync();
         } catch (error, stackTrace) {

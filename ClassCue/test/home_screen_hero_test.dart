@@ -66,10 +66,13 @@ void main() {
       await tester.pump();
 
       expect(find.text('All classes done'), findsOneWidget);
-      expect(find.text('Good job today — rest up and recharge.'), findsOneWidget);
+      expect(
+        find.text('Every class today is finished. Nice work.'),
+        findsOneWidget,
+      );
       expect(find.byIcon(Icons.check_circle_outline_rounded), findsOneWidget);
-      expect(find.text('TOMORROW'), findsOneWidget);
-      expect(find.text('Tomorrow Math'), findsOneWidget);
+      expect(find.text('TOMORROW'), findsNothing);
+      expect(find.text('Tomorrow Math'), findsNothing);
     },
   );
 
@@ -106,11 +109,27 @@ void main() {
       });
       await tester.pump();
 
-      expect(find.text('No classes today'), findsOneWidget);
-      expect(find.text('Enjoy your free time and recharge.'), findsOneWidget);
-      expect(find.byIcon(Icons.wb_sunny_outlined), findsOneWidget);
-      expect(find.text('TOMORROW'), findsOneWidget);
-      expect(find.text('Next Day Chemistry'), findsOneWidget);
+      final isWeekend = now.weekday >= DateTime.saturday;
+      expect(
+        find.text(isWeekend ? 'Weekend off' : 'No classes today'),
+        findsOneWidget,
+      );
+      expect(
+        find.text(
+          isWeekend
+              ? 'No classes today. Enjoy your break.'
+              : 'Nothing scheduled. Enjoy the open time.',
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byIcon(
+          isWeekend ? Icons.weekend_outlined : Icons.wb_sunny_outlined,
+        ),
+        findsOneWidget,
+      );
+      expect(find.text('TOMORROW'), findsNothing);
+      expect(find.text('Next Day Chemistry'), findsNothing);
     },
   );
 }

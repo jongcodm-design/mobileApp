@@ -38,9 +38,9 @@ final _pages = <_OnboardingPage>[
   ),
   _OnboardingPage(
     'Add your timetable',
-    'Tap Add class to enter one yourself, or choose Import a timetable for a photo or PDF. Review detected times, rooms, and conflicts before saving.',
+    'Tap Add class to enter a class yourself. Check each class’s time and room before you save.',
     'See reminders and backup',
-    'Import preview: choose a timetable, inspect flagged class details, then save the reviewed schedule.',
+    'Class review: a list of classes to check before you save.',
     (_) => const _ImportPreview(),
   ),
   _OnboardingPage(
@@ -67,7 +67,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
 
   bool get _isLast => _page == _pages.length - 1;
   bool get _isFirstRunStartPage => !widget.isReplay && _page == 0;
-  bool get _showImportAction => !widget.isReplay && (_isLast || _page == 0);
 
   @override
   void dispose() {
@@ -278,18 +277,6 @@ class _OnboardingScreenState extends State<OnboardingScreen> {
                             ),
                           ),
                         ),
-                        if (_showImportAction) ...[
-                          const SizedBox(height: 4),
-                          SizedBox(
-                            width: double.infinity,
-                            child: TextButton.icon(
-                              onPressed: () =>
-                                  _startWith(AppRoutes.importSchedule),
-                              icon: const Icon(Icons.document_scanner_outlined),
-                              label: const Text('Import a timetable'),
-                            ),
-                          ),
-                        ],
                         if (_isFirstRunStartPage)
                           TextButton(
                             onPressed: _next,
@@ -435,15 +422,6 @@ class _ImportPreview extends StatelessWidget {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
-        SizedBox(
-          width: double.infinity,
-          child: FilledButton.icon(
-            onPressed: () {},
-            icon: const Icon(Icons.file_open_outlined),
-            label: const Text('Choose a timetable'),
-          ),
-        ),
-        const SizedBox(height: 12),
         Padding(
           padding: const EdgeInsets.only(left: 4),
           child: Text(

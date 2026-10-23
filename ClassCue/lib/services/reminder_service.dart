@@ -7,6 +7,7 @@ import 'package:timezone/timezone.dart' as tz;
 
 import '../database/database_helper.dart';
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 
 @visibleForTesting
 Future<List<ClassItem>> readClassesBeforeClearingReminders({
@@ -132,6 +133,9 @@ class ReminderService extends ChangeNotifier {
   Future<void> sync() async {
     if (!await isEnabled) return;
     await initialize();
+    // Read the marks before anything is cleared. If this fails, the current
+    // reminders stay in place.
+    final statuses = await DatabaseHelper.instance.getClassStatuses();
     // Keep the current reminders if the local schedule cannot be read.
     final classes = await readClassesBeforeClearingReminders(
       readClasses: DatabaseHelper.instance.getAll,
@@ -144,59 +148,121 @@ class ReminderService extends ChangeNotifier {
     final exactAlarmsAvailable =
         await android?.canScheduleExactNotifications() ?? false;
     final now = tz.TZDateTime.now(tz.local);
+    final today = DateTime(now.year, now.month, now.day);
     for (final c in classes) {
       final reminderMinutes = c.startMinutes >= 10
           ? c.startMinutes - 10
           : c.startMinutes;
-      var next = tz.TZDateTime(
-        tz.local,
-        now.year,
-        now.month,
-        now.day,
-        reminderMinutes ~/ 60,
-        reminderMinutes % 60,
-      );
-      while (next.weekday != c.day || !next.isAfter(now)) {
-        next = next.add(const Duration(days: 1));
-        if (next.weekday == c.day) {
-          next = tz.TZDateTime(
-            tz.local,
-            next.year,
-            next.month,
-            next.day,
-            reminderMinutes ~/ 60,
-            reminderMinutes % 60,
+      final marks = statuses[c.id] ?? const <ClassStatusEntry>[];
+
+      // The last day any mark still covers. An until-cleared mark covers every
+      // later date, so it ends the schedule at the day it starts.
+      DateTime? lastMarked;
+      var openEnded = false;
+      for (final e in marks) {
+        final endKey = e.endDate;
+        if (endKey == null) {
+          openEnded = true;
+          final start = parseDateKey(e.startDate);
+          final stop = start.isBefore(today) ? today : start;
+          if (lastMarked == null || stop.isAfter(lastMarked)) lastMarked = stop;
+          continue;
+        }
+        final end = parseDateKey(endKey);
+        if (end.isBefore(today)) continue;
+        if (lastMarked == null || end.isAfter(lastMarked)) lastMarked = end;
+      }
+
+      // Up to the last mark: one reminder per date, skipping marked dates.
+      if (lastMarked != null) {
+        for (
+          var date = today;
+          !date.isAfter(lastMarked);
+          date = _addDays(date, 1)
+        ) {
+          if (date.weekday != c.day) continue;
+          if (activeStatusEntry(statuses, c.id, date) != null) continue;
+          final when = _at(date, reminderMinutes);
+          if (!when.isAfter(now)) continue;
+          await _scheduleAt(
+            id: _occurrenceId(c, date),
+            c: c,
+            when: when,
+            repeat: false,
+            exact: exactAlarmsAvailable,
           );
         }
       }
-      final id = (c.id ?? _stableId(c)) & 0x7fffffff;
-      await _plugin.zonedSchedule(
-        id: id,
-        title: 'Class starting soon',
-        body: _reminderBody(c),
-        scheduledDate: next,
-        notificationDetails: const NotificationDetails(
-          android: AndroidNotificationDetails(
-            _channelId,
-            'Upcoming classes',
-            channelDescription: _channelDescription,
-            importance: Importance.high,
-            priority: Priority.high,
-          ),
-          iOS: DarwinNotificationDetails(
-            presentAlert: true,
-            presentBadge: true,
-            presentSound: true,
-          ),
-        ),
-        androidScheduleMode: exactAlarmsAvailable
-            ? AndroidScheduleMode.exactAllowWhileIdle
-            : AndroidScheduleMode.inexactAllowWhileIdle,
-        matchDateTimeComponents: DateTimeComponents.dayOfWeekAndTime,
-        payload: 'class:${c.id ?? _stableId(c)}',
-      );
+
+      // After the last mark: a weekly repeat, starting on the first matching
+      // day after it. It turns back on by itself, with no app run needed.
+      // Until-cleared marks have no tail; clearing one re-syncs.
+      if (!openEnded) {
+        var day = lastMarked == null ? today : _addDays(lastMarked, 1);
+        while (day.weekday != c.day) {
+          day = _addDays(day, 1);
+        }
+        var when = _at(day, reminderMinutes);
+        if (!when.isAfter(now)) {
+          when = _at(_addDays(day, 7), reminderMinutes);
+        }
+        await _scheduleAt(
+          id: _repeatId(c),
+          c: c,
+          when: when,
+          repeat: true,
+          exact: exactAlarmsAvailable,
+        );
+      }
     }
   }
+
+  Future<void> _scheduleAt({
+    required int id,
+    required ClassItem c,
+    required tz.TZDateTime when,
+    required bool repeat,
+    required bool exact,
+  }) async {
+    await _plugin.zonedSchedule(
+      id: id,
+      title: 'Class starting soon',
+      body: _reminderBody(c),
+      scheduledDate: when,
+      notificationDetails: const NotificationDetails(
+        android: AndroidNotificationDetails(
+          _channelId,
+          'Upcoming classes',
+          channelDescription: _channelDescription,
+          importance: Importance.high,
+          priority: Priority.high,
+        ),
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      ),
+      androidScheduleMode: exact
+          ? AndroidScheduleMode.exactAllowWhileIdle
+          : AndroidScheduleMode.inexactAllowWhileIdle,
+      matchDateTimeComponents: repeat
+          ? DateTimeComponents.dayOfWeekAndTime
+          : null,
+      payload: 'class:${c.id ?? _stableId(c)}',
+    );
+  }
+
+  /// Id of a class's weekly repeat. Different from any single-date id.
+  int _repeatId(ClassItem c) =>
+      '${c.subject}|${c.room}|${c.day}|${c.startMinutes}|repeat'.hashCode &
+      0x7fffffff;
+
+  /// One notification per class per date, so each date can be skipped on its own.
+  int _occurrenceId(ClassItem c, DateTime date) =>
+      '${c.subject}|${c.room}|${c.day}|${c.startMinutes}|${dateKey(date)}'
+          .hashCode &
+      0x7fffffff;
 
   // Reads correctly with or without a room: "Network Lab, room to confirm."
   String _reminderBody(ClassItem c) {
@@ -211,3 +277,15 @@ class ReminderService extends ChangeNotifier {
   int _stableId(ClassItem c) =>
       '${c.subject}|${c.room}|${c.day}|${c.startMinutes}'.hashCode;
 }
+
+DateTime _addDays(DateTime d, int days) =>
+    DateTime(d.year, d.month, d.day + days);
+
+tz.TZDateTime _at(DateTime d, int minutes) => tz.TZDateTime(
+  tz.local,
+  d.year,
+  d.month,
+  d.day,
+  minutes ~/ 60,
+  minutes % 60,
+);

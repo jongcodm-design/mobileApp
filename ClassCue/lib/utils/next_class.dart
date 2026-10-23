@@ -1,4 +1,5 @@
 import '../models/class_item.dart';
+import '../models/class_status.dart';
 
 class NextClass {
   final ClassItem item;
@@ -42,23 +43,35 @@ class NextClass {
 }
 
 /// Returns the class happening now, or the soonest upcoming one (this week).
-NextClass? findNextClass(List<ClassItem> classes, DateTime now) {
+/// A class occurrence with an active status (not attending / cancelled) is skipped.
+NextClass? findNextClass(
+  List<ClassItem> classes,
+  DateTime now, {
+  ClassStatuses statuses = const {},
+}) {
   if (classes.isEmpty) return null;
   final nowMin = now.hour * 60 + now.minute;
+  final today = DateTime(now.year, now.month, now.day);
 
   for (final c in classes) {
     if (c.day == now.weekday &&
         c.startMinutes <= nowMin &&
-        nowMin < c.endMinutes) {
+        nowMin < c.endMinutes &&
+        activeDayStatus(statuses, c.id, today) == null) {
       return NextClass(c, true, 0, minutesToEnd: c.endMinutes - nowMin);
     }
   }
 
   NextClass? best;
   for (final c in classes) {
-    final dayDiff = (c.day - now.weekday + 7) % 7;
+    var dayDiff = (c.day - now.weekday + 7) % 7;
     var until = dayDiff * 1440 + c.startMinutes - nowMin;
-    if (until <= 0) until += 7 * 1440; // already passed today -> next week
+    if (until <= 0) {
+      until += 7 * 1440; // already passed today -> next week
+      dayDiff += 7;
+    }
+    final occurrence = DateTime(today.year, today.month, today.day + dayDiff);
+    if (activeDayStatus(statuses, c.id, occurrence) != null) continue;
     if (best == null || until < best.minutesUntil) {
       best = NextClass(c, false, until);
     }
