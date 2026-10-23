@@ -1,0 +1,17 @@
+<resources>
+    <string name="next_class_widget_name">Next Class</string>
+    <string name="next_class_widget_description">See your next class from the home screen.</string>
+    <string name="next_class_widget_label">Next up</string>
+    <string name="next_class_widget_in_class">In class</string>
+    <string name="next_class_widget_starts_in" formatted="false">Starts in %s</string>
+    <string name="next_class_widget_ends_in" formatted="false">Ends in %s</string>
+    <string name="next_class_widget_today">Today</string>
+    <string name="next_class_widget_tomorrow">Tomorrow</string>
+    <string name="next_class_widget_empty_title">No classes scheduled</string>
+    <string name="next_class_widget_empty_message">Open ClassCue to add a timetable.</string>
+    <string name="next_class_widget_all_done_title">All classes done</string>
+    <string name="next_class_widget_all_done_subtitle">Good job today – rest up and recharge.</string>
+    <string name="next_class_widget_free_day_title">No classes today</string>
+    <string name="next_class_widget_free_day_subtitle">Enjoy your free time and recharge.</string>
+    <string name="next_class_widget_day_tomorrow">TOMORROW</string>
+</resources>

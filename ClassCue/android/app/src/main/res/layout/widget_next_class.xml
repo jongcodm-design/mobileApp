@@ -1,0 +1,429 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    ClassCue Homescreen Widget Layout
+    Form-factor, typography, and hierarchy matched 1-to-1 with NextClassCard.
+-->
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:id="@+id/widget_root"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@drawable/next_class_widget_background"
+    android:paddingStart="20dp"
+    android:paddingTop="18dp"
+    android:paddingEnd="20dp"
+    android:paddingBottom="18dp">
+
+    <!-- 1. CELEBRATION CONTAINER (All classes done / No classes today) -->
+    <LinearLayout
+        android:id="@+id/widget_celebration_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:visibility="gone"
+        tools:visibility="visible">
+
+        <!-- Title row with icon -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:id="@+id/widget_celebration_icon"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:layout_marginEnd="8dp"
+                android:contentDescription="@null"
+                android:src="@drawable/next_class_widget_check_icon"
+                android:tint="@color/next_class_widget_text" />
+
+            <TextView
+                android:id="@+id/widget_celebration_title"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif"
+                android:maxLines="1"
+                android:text="@string/next_class_widget_all_done_title"
+                android:textColor="@color/next_class_widget_text"
+                android:textSize="18sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <!-- Subtitle -->
+        <TextView
+            android:id="@+id/widget_celebration_subtitle"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif"
+            android:maxLines="1"
+            android:text="@string/next_class_widget_all_done_subtitle"
+            android:textColor="@color/next_class_widget_secondary"
+            android:textSize="12sp" />
+
+        <!-- Next class shelf (borderless, rounded, matching NextClassCard) -->
+        <LinearLayout
+            android:id="@+id/widget_shelf_container"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:background="@drawable/next_class_widget_shelf_background"
+            android:orientation="vertical"
+            android:paddingStart="14dp"
+            android:paddingTop="10dp"
+            android:paddingEnd="14dp"
+            android:paddingBottom="10dp">
+
+            <!-- Shelf header: Day Pill on left, Starts in countdown on right -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_shelf_day_pill"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/next_class_widget_day_pill"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:maxLines="1"
+                    android:paddingStart="8dp"
+                    android:paddingTop="2dp"
+                    android:paddingEnd="8dp"
+                    android:paddingBottom="2dp"
+                    android:text="TOMORROW"
+                    android:textColor="@color/next_class_widget_day_pill_text"
+                    android:textSize="10sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_shelf_when"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:gravity="end"
+                    android:singleLine="true"
+                    android:textAlignment="viewEnd"
+                    android:textColor="@color/next_class_widget_secondary"
+                    android:textSize="11sp"
+                    android:textStyle="bold"
+                    tools:text="Starts in 11h 3m" />
+            </LinearLayout>
+
+            <!-- Shelf content: Subject and Time side-by-side -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <TextView
+                    android:id="@+id/widget_shelf_subject"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif"
+                    android:letterSpacing="-0.01"
+                    android:maxLines="1"
+                    android:text="QM"
+                    android:textColor="@color/next_class_widget_text"
+                    android:textSize="14sp"
+                    android:textStyle="bold" />
+
+                <TextView
+                    android:id="@+id/widget_shelf_time"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="8dp"
+                    android:layout_weight="1"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:fontFeatureSettings="tnum"
+                    android:maxLines="1"
+                    android:text="10:30 AM - 12:00 PM"
+                    android:textColor="@color/next_class_widget_secondary"
+                    android:textSize="12sp" />
+            </LinearLayout>
+
+            <!-- Shelf details: room and prof horizontally with icons -->
+            <LinearLayout
+                android:id="@+id/widget_shelf_details"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="5dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <LinearLayout
+                    android:id="@+id/widget_shelf_room_row"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="12dp"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="13dp"
+                        android:layout_height="13dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/next_class_widget_room_icon"
+                        android:tint="@color/next_class_widget_secondary" />
+
+                    <TextView
+                        android:id="@+id/widget_shelf_room"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:ellipsize="end"
+                        android:fontFamily="sans-serif-medium"
+                        android:maxLines="1"
+                        android:text="Room 201"
+                        android:textColor="@color/next_class_widget_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+
+                <LinearLayout
+                    android:id="@+id/widget_shelf_professor_row"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:gravity="center_vertical"
+                    android:orientation="horizontal">
+
+                    <ImageView
+                        android:layout_width="13dp"
+                        android:layout_height="13dp"
+                        android:contentDescription="@null"
+                        android:src="@drawable/next_class_widget_professor_icon"
+                        android:tint="@color/next_class_widget_secondary" />
+
+                    <TextView
+                        android:id="@+id/widget_shelf_professor"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_marginStart="4dp"
+                        android:ellipsize="end"
+                        android:fontFamily="sans-serif-medium"
+                        android:maxLines="1"
+                        android:text="R.Tiongco"
+                        android:textColor="@color/next_class_widget_secondary"
+                        android:textSize="11sp" />
+                </LinearLayout>
+            </LinearLayout>
+
+        </LinearLayout>
+    </LinearLayout>
+
+    <!-- 2. ACTIVE CLASS CONTAINER (Happening now or later today) -->
+    <!-- Formatted exactly like NextClassCard active layout -->
+    <LinearLayout
+        android:id="@+id/widget_active_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical">
+
+        <!-- Header: label ("Next up" / "In class") and countdown -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/widget_label"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/next_class_widget_pill"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif-medium"
+                android:maxLines="1"
+                android:paddingStart="10dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="3dp"
+                android:text="@string/next_class_widget_label"
+                android:textColor="@color/next_class_widget_text"
+                android:textSize="12sp"
+                android:textStyle="bold"
+                tools:text="Next up" />
+
+            <TextView
+                android:id="@+id/widget_when"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:layout_weight="1"
+                android:ellipsize="end"
+                android:fontFamily="sans-serif"
+                android:gravity="end"
+                android:singleLine="true"
+                android:textAlignment="viewEnd"
+                android:textColor="@color/next_class_widget_text"
+                android:textSize="13sp"
+                android:textStyle="bold"
+                tools:text="Starts in 45m" />
+        </LinearLayout>
+
+        <!-- Subject on its own line (matching NextClassCard titleLarge) -->
+        <TextView
+            android:id="@+id/widget_subject"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif"
+            android:letterSpacing="-0.01"
+            android:maxLines="2"
+            android:text="Data Structures"
+            android:textColor="@color/next_class_widget_text"
+            android:textSize="22sp"
+            android:textStyle="bold" />
+
+        <!-- Time on its own line (matching NextClassCard titleMedium) -->
+        <TextView
+            android:id="@+id/widget_time"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:ellipsize="end"
+            android:fontFamily="sans-serif-medium"
+            android:fontFeatureSettings="tnum"
+            android:maxLines="1"
+            android:text="7:00 AM - 8:30 AM"
+            android:textColor="@color/next_class_widget_time"
+            android:textSize="15sp" />
+
+        <!-- Room and professor details (stacked vertically, matching NextClassCard) -->
+        <LinearLayout
+            android:id="@+id/widget_details"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:orientation="vertical">
+
+            <LinearLayout
+                android:id="@+id/widget_room_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="15dp"
+                    android:layout_height="15dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/next_class_widget_room_icon"
+                    android:tint="@color/next_class_widget_secondary" />
+
+                <TextView
+                    android:id="@+id/widget_room"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1"
+                    android:text="Room 204"
+                    android:textColor="@color/next_class_widget_secondary"
+                    android:textSize="12sp"
+                    tools:text="Room 204" />
+            </LinearLayout>
+
+            <LinearLayout
+                android:id="@+id/widget_professor_row"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:layout_width="15dp"
+                    android:layout_height="15dp"
+                    android:contentDescription="@null"
+                    android:src="@drawable/next_class_widget_professor_icon"
+                    android:tint="@color/next_class_widget_secondary" />
+
+                <TextView
+                    android:id="@+id/widget_professor"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:ellipsize="end"
+                    android:fontFamily="sans-serif-medium"
+                    android:maxLines="1"
+                    android:text="Prof. Santos"
+                    android:textColor="@color/next_class_widget_secondary"
+                    android:textSize="12sp"
+                    tools:text="Prof. Santos" />
+            </LinearLayout>
+        </LinearLayout>
+
+    </LinearLayout>
+
+    <!-- 3. EMPTY SCHEDULE CONTAINER -->
+    <LinearLayout
+        android:id="@+id/widget_empty_container"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:gravity="center_vertical"
+        android:orientation="vertical"
+        android:visibility="gone">
+
+        <!-- Header: label "Next class" -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/next_class_widget_pill"
+                android:fontFamily="sans-serif-medium"
+                android:paddingStart="10dp"
+                android:paddingTop="3dp"
+                android:paddingEnd="10dp"
+                android:paddingBottom="3dp"
+                android:text="Next class"
+                android:textColor="@color/next_class_widget_text"
+                android:textSize="12sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/widget_empty_title"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="sans-serif"
+            android:text="Your next class will appear here."
+            android:textColor="@color/next_class_widget_text"
+            android:textSize="16sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/widget_empty_message"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:fontFamily="sans-serif"
+            android:text="@string/next_class_widget_empty_message"
+            android:textColor="@color/next_class_widget_secondary"
+            android:textSize="11sp" />
+    </LinearLayout>
+
+</FrameLayout>
